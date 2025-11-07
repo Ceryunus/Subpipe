@@ -132,7 +132,7 @@ python pipeline.py --video "path/to/video.mp4" --mode burned
 
 - `--video`: Specifies the video file path (enclose in quotes).
 
-### 3. Run Specific Steps
+### 3. Run Specific Steps (optional)
 
 - **Extract Audio Only**:
 
