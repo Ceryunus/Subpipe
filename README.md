@@ -67,6 +67,7 @@ streamlit run ui_app.py
 
 
 
+![howtorun](https://github.com/user-attachments/assets/09c9a6fa-0330-4a6a-8644-d2e056a4371f)
 
 
 
