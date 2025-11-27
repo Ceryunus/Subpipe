@@ -10,10 +10,10 @@ from transcribe_only import transcribe
 from translate_only import load_segments, translate
 from embed_subtitles import add_soft_subs, add_burned_subs
 
-# Environment setting
+# ENVIRONMENT & CONFIG
+
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
-# Config
 with open('config.json', 'r', encoding='utf-8') as f:
     config = json.load(f)
 
@@ -22,10 +22,10 @@ models = config['models']
 subtitles = config['subtitles']
 logging_config = config['logging']
 
-# Log settings
+# Log setup
+
 os.makedirs(paths['logs_dir'], exist_ok=True)
 log_file = os.path.join(paths['logs_dir'], 'pipeline.log')
-
 handler = logging.handlers.RotatingFileHandler(
     log_file,
     maxBytes=int(logging_config['max_file_size'].replace('MB', '')) * 1024 * 1024,
@@ -37,8 +37,45 @@ logging.basicConfig(
     format=logging_config['format']
 )
 
+
+# HELPERS
+
+def reload_config():
+    global paths, models, subtitles, logging_config
+
+    with open('config.json', 'r', encoding='utf-8') as f:
+        config = json.load(f)
+
+    paths = config['paths']
+    models = config['models']
+    subtitles = config['subtitles']
+    logging_config = config['logging']
+
+    # Close hadler
+    for h in logging.getLogger().handlers[:]:
+        h.close()
+        logging.getLogger().removeHandler(h)
+
+    
+    max_file_size_mb = logging_config['max_file_size'].replace('MB', '').strip()
+    max_bytes = int(max_file_size_mb) * 1024 * 1024
+
+    os.makedirs(paths['logs_dir'], exist_ok=True)
+    log_file = os.path.join(paths['logs_dir'], 'pipeline.log')
+
+    new_handler = logging.handlers.RotatingFileHandler(
+        log_file,
+        maxBytes=max_bytes,
+        backupCount=5
+    )
+    logging.basicConfig(
+        handlers=[new_handler],
+        level=getattr(logging, logging_config['level']),
+        format=logging_config['format']
+    )
+    logging.info("reload_config(): Reload config and settings.")
+
 def cleanup_gpu() -> None:
-    """Utility to clean GPU memory."""
     try:
         import gc
         gc.collect()
@@ -48,128 +85,89 @@ def cleanup_gpu() -> None:
         logging.warning(f"GPU cleanup skipped: {e}")
 
 def select_video_file(video_arg: str | None) -> str:
-    """Select video file from argument or default directory."""
     if video_arg:
         video_path = Path(video_arg).resolve()
         if not video_path.exists():
-            raise FileNotFoundError(f"Video file not found: {video_path}")
+            raise FileNotFoundError(f"Video not found: {video_path}")
         return video_path.as_posix()
-    
     video_files = list(Path(paths["video_dir"]).glob("*.mp4"))
     if not video_files:
         raise FileNotFoundError(f"No MP4 files found in {paths['video_dir']}")
-    if len(video_files) > 1:
-        logging.warning(f"Multiple MP4 files found, using the first one: {video_files[0]}")
     return video_files[0].resolve().as_posix()
 
-def step_extract_audio(video_file: str, output_audio: Path) -> None:
-    """Extract audio from video."""
-    logging.info("Step 1: Extracting audio from video...")
-    try:
-        extract_audio_from_video(video_file, str(output_audio))
-        logging.info(f"Successfully extracted audio file: {output_audio}")
-    except Exception as e:
-        logging.error(f"Audio extraction failed: {e}")
-        raise
+# PIPELINE STEPS
 
-def step_transcribe(output_audio: Path, subs_original_file_json: Path, subs_original_file: Path) -> None:
-    """Transcribe audio to segments."""
+def step_extract_audio(video_file, output_audio):
+    logging.info("Step 1: Extracting audio...")
+    extract_audio_from_video(video_file, str(output_audio))
+    logging.info("Step 1 completed.")
+
+def step_transcribe(output_audio, subs_original_json, subs_original_file):
     logging.info("Step 2: Transcribing audio...")
-    try:
-        transcribe(output_audio, subs_original_file_json, subs_original_file)
-        logging.info(f"Transcription completed: {subs_original_file_json}")
-        cleanup_gpu()
-    except Exception as e:
-        logging.error(f"Transcription failed: {e}")
-        raise
+    transcribe(output_audio, subs_original_json, subs_original_file)
+    cleanup_gpu()
+    logging.info("Step 2 completed.")
 
-def step_translate(subs_original_file_json: Path, subs_translated_file_srt: str, subs_translated_file_txt: Path) -> None:
-    """Translate transcription segments."""
+def step_translate(subs_original_json, subs_translated_srt, subs_translated_txt):
     logging.info("Step 3: Translating transcription...")
-    try:
-        segments, source_lang = load_segments(subs_original_file_json)
-        translate(
-            segments,
-            source_lang=source_lang,
-            target_lang=models['target_lang'],
-            output_srt=subs_translated_file_srt,
-            output_txt=str(subs_translated_file_txt)
-        )
-        logging.info(f"Translation completed: {subs_translated_file_srt}")
-        cleanup_gpu()
-    except Exception as e:
-        logging.error(f"Translation failed: {e}")
-        raise
+    segments, source_lang = load_segments(subs_original_json)
+    translate(
+        segments,
+        source_lang=source_lang,
+        target_lang=models['target_lang'],
+        output_srt=subs_translated_srt,
+        output_txt=str(subs_translated_txt),
+    )
+    cleanup_gpu()
+    logging.info("Step 3 completed.")
 
-def step_subtitles(video_file: str, subs_translated_file_srt: str, output_soft: Path, output_burned: Path, mode: str) -> None:
-    """Add subtitles to video."""
-    logging.info(f"Step 4: Adding subtitles (mode: {mode})...")
-    try:
-        if mode == 'soft':
-            add_soft_subs(video_file, subs_translated_file_srt, str(output_soft))
-            logging.info(f"Soft subtitled video saved: {output_soft}")
-        elif mode == 'burned':
-            add_burned_subs(video_file, subs_translated_file_srt, str(output_burned))
-            logging.info(f"Burned subtitled video saved: {output_burned}")
-        else:
-            raise ValueError(f"Invalid subtitle mode: {mode}")
-    except Exception as e:
-        logging.error(f"Subtitle embedding failed: {e}")
-        raise
+def step_subtitles(video_file, subs_translated_srt, output_soft, output_burned, mode):
+    logging.info(f"Step 4: Adding subtitles ({mode})...")
+    if mode == 'soft':
+        add_soft_subs(video_file, subs_translated_srt, str(output_soft))
+    else:
+        add_burned_subs(video_file, subs_translated_srt, str(output_burned))
+    logging.info("Step 4 completed.")
 
-def run_pipeline(steps: list[str], mode: str | None = None, video_arg: str | None = None) -> None:
-    """
-    Run selected pipeline steps.
+# MAIN PIPELINE FUNCTION (with callback)
 
-    Args:
-        steps: List of steps to run (extract, transcribe, translate, subtitles).
-        mode: Subtitle mode ('soft' or 'burned'), overrides config.json.
-        video_arg: Custom video file path (optional).
-    """
+def run_pipeline(steps, mode=None, video_arg=None, on_step_complete=print):
     try:
-        # Select video file
+        reload_config()
         video_file = select_video_file(video_arg)
-
-        # Paths
         output_audio = Path(paths['audio_dir']) / paths['audio_file']
+        subs_original_json = Path(paths['subs_original_dir']) / paths['subs_original_file_json']
         subs_original_file = Path(paths['subs_original_dir']) / paths['subs_original_file']
-        subs_original_file_json = Path(paths['subs_original_dir']) / paths['subs_original_file_json']
-        output_audio_folder = Path(paths['audio_dir'])
-        subs_translated_folder = Path(paths["subs_translated_dir"])
-        subs_translated_file_srt = (subs_translated_folder / paths['subs_translated_file_srt']).as_posix()
-        subs_translated_file_txt = subs_translated_folder / paths['subs_translated_file_txt']
+        subs_translated_srt = (Path(paths['subs_translated_dir']) / paths['subs_translated_file_srt']).as_posix()
+        subs_translated_txt = Path(paths['subs_translated_dir']) / paths['subs_translated_file_txt']
         output_soft = Path(paths['video_with_subs_dir']) / paths['output_soft']
         output_burned = Path(paths['video_with_subs_dir']) / paths['output_burned']
-        os.makedirs(output_audio_folder,exist_ok=True)
-        # os.makedirs(output_audio,exist_ok=True)
-        final_mode = mode or subtitles.get('mode', 'burned')
+        os.makedirs(Path(paths['audio_dir']), exist_ok=True)
 
+        final_mode = mode or subtitles.get('mode', 'burned')
         if "extract" in steps:
             step_extract_audio(video_file, output_audio)
-        
+            on_step_complete("extract")
+            
+
         if "transcribe" in steps:
-            step_transcribe(output_audio, subs_original_file_json, subs_original_file)
-        
+            step_transcribe(output_audio, subs_original_json, subs_original_file)
+            on_step_complete("transcribe")
+
         if "translate" in steps:
-            step_translate(subs_original_file_json, subs_translated_file_srt, subs_translated_file_txt)
-        
+            step_translate(subs_original_json, subs_translated_srt, subs_translated_txt)
+            on_step_complete("translate")
+
         if "subtitles" in steps:
-            step_subtitles(video_file, subs_translated_file_srt, output_soft, output_burned, final_mode)
+            step_subtitles(video_file, subs_translated_srt, output_soft, output_burned, final_mode)
+            on_step_complete("subtitles")
 
-        print("Pipeline completed successfully!")
         logging.info("Pipeline completed successfully.")
+        on_step_complete("done")
 
-    except FileNotFoundError as e:
-        logging.error(f"File error: {e}")
-        print(f"Error: {e}")
-        raise
-    except ValueError as e:
-        logging.error(f"Configuration error: {e}")
-        print(f"Error: {e}")
-        raise
     except Exception as e:
-        logging.error(f"Pipeline error: {e}")
-        print(f"Error: {e}")
+        logging.error(f"Pipeline failed: {e}")
+        on_step_complete("error", str(e))
         raise
 
 if __name__ == "__main__":

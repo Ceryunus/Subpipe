@@ -9,3 +9,4 @@ moviepy==2.2.1
 nltk==3.9.1
 numpy==2.1.2
 tqdm==4.67.1
+streamlit==1.45.1

@@ -1,4 +1,4 @@
-# SubPipe: Automated Video Subtitling Pipeline
+# SubPipe: Automated Video Subtitling Pipeline 🎬
 
 SubPipe is a Python-based pipeline that automates the process of
 extracting audio from videos, transcribing speech, translating text, and
@@ -42,6 +42,33 @@ Check the `config.json` file for all supported models and options.
 ⚠️ **Important Note**: This project requires an NVIDIA GPU for efficient
 transcription and translation. FFmpeg must be installed for subtitle
 embedding and optional audio extraction.
+
+
+## 💻 Web Interface (Streamlit)
+
+SubPipe now includes a Streamlit web interface (`ui_app.py`) for easy, no-command-line processing.
+
+To start the interface, run:
+
+```bash
+streamlit run ui_app.py
+```
+
+### Usage Features:
+
+  * **Upload**: Drag-and-drop your video file directly into the interface.
+  * **Configuration**: Select the Whisper model, translation model, and target language.
+  * **Run**: Click the "Run Pipeline" button to start the end-to-end subtitling process.
+  * The UI provides **live progress updates**, **runtime logs**, a **preview of the generated SRT file**, and **direct download** links for the output files.
+
+-----
+
+## 🖼️ Demo GIF
+
+
+
+
+
 
 ## 📂 Project Structure
 
@@ -108,7 +135,20 @@ embedding and optional audio extraction.
     Whisper Large-v3 and NLLB-200 models are downloaded automatically
     from Hugging Face on first run.
 
-## ▶️ Usage
+## ▶️ UI Usage Option
+
+SubPipe now includes a Streamlit web interface (`ui_app.py`) for easy, no-command-line processing.
+
+To start the interface, run:
+
+```bash
+streamlit run ui_app.py
+```
+
+-----
+
+
+## ▶️ CLI Usage Option
 
 Run `pipeline.py` to process videos with flexible options.
 
@@ -132,7 +172,7 @@ python pipeline.py --video "path/to/video.mp4" --mode burned
 
 - `--video`: Specifies the video file path (enclose in quotes).
 
-### 3. Run Specific Steps (optional)
+### 3. Run Specific Steps (Optional)
 
 - **Extract Audio Only**:
 
@@ -271,9 +311,6 @@ Customize the pipeline via `config.json`:
   rotation.
 - **Audio Extraction**: Toggle between MoviePy and FFmpeg for faster
   processing.
-- **Whisper Model Param**: Can be change whisper model parameters 
-  in config.json
-
 
 ## 📜 License
 
